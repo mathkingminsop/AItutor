@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI 수학 과외 (1단계 시제품)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">
+        <h1>AI 수학 과외</h1>
+        <span class="badge">1단계 시제품</span>
+      </div>
+      <div id="pill" class="pill" data-state="idle" role="status" aria-live="polite">
+        <span class="dot" aria-hidden="true"></span><span id="pill-text">대기 중</span>
+      </div>
+    </header>
+
+    <main>
+      <ol class="steps" aria-label="수업 순서">
+        <li id="step-1" class="step active">
+          <span class="num">1</span>
+          <div>
+            <strong>헤드폰 끼기</strong>
+            <p>스피커를 쓰면 AI가 자기 목소리를 듣고 말이 끊길 수 있어요.</p>
+          </div>
+        </li>
+        <li id="step-2" class="step">
+          <span class="num">2</span>
+          <div>
+            <strong>수업 시작</strong>
+            <p>마이크 허용 창이 뜨면 "허용"을 눌러 주세요.</p>
+            <button id="start" class="primary">수업 시작</button>
+          </div>
+        </li>
+        <li id="step-3" class="step">
+          <span class="num">3</span>
+          <div>
+            <strong>풀이 화면 공유</strong>
+            <p>문제와 풀이가 보이는 창을 골라 주세요. 화면이 바뀔 때만 AI에게 보내요.</p>
+            <button id="share" disabled>화면 공유</button>
+          </div>
+        </li>
+      </ol>
+
+      <div id="alert" class="alert" hidden role="alert">
+        <strong id="alert-title"></strong>
+        <p id="alert-hint"></p>
+        <button id="alert-close" class="link">닫기</button>
+      </div>
+
+      <section class="panels">
+        <div class="panel talk">
+          <div class="panel-head">
+            <h2>대화</h2>
+            <div class="meters">
+              <span class="meter" title="내 목소리 크기"><span class="label">나</span><span class="bar"><span id="mic-level"></span></span></span>
+              <span id="speaking" class="speaking" hidden>AI가 말하는 중</span>
+            </div>
+          </div>
+          <ol id="transcript" aria-live="polite">
+            <li class="empty" id="empty">수업을 시작하면 대화가 여기에 글자로 나타나요.<br />"이 문제 어떻게 시작해요?"처럼 편하게 말을 걸어 보세요.</li>
+          </ol>
+          <div class="talk-foot">
+            <button id="stop" class="danger" disabled>수업 끝내기</button>
+          </div>
+        </div>
+
+        <div class="side">
+          <div class="panel">
+            <h2>AI가 보는 화면</h2>
+            <div id="preview-empty" class="preview-empty">아직 공유한 화면이 없어요.</div>
+            <video id="preview" muted playsinline></video>
+          </div>
+          <details class="panel">
+            <summary><h2>측정값 (개발용)</h2></summary>
+            <dl class="stats">
+              <dt>응답 지연 (최근)</dt><dd id="lat-last">-</dd>
+              <dt>응답 지연 (중앙값)</dt><dd id="lat-p50">-</dd>
+              <dt>1초 이내 비율</dt><dd id="lat-ok">-</dd>
+              <dt>수업 시간</dt><dd id="elapsed">-</dd>
+              <dt>재연결</dt><dd id="reconnects">0</dd>
+              <dt>보낸 화면 / 생략</dt><dd id="frames">0 / 0</dd>
+            </dl>
+          </details>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

@@ -1,11 +1,17 @@
 import { LiveSession, base64ToInt16 } from './live.js';
 import { ScreenSampler } from './screen.js';
 import { LatencyTracker } from './latency.js';
+import { friendlyError } from './friendly.js';
 
 const $ = (id) => document.getElementById(id);
 const ui = {
-  start: $('start'), share: $('share'), stop: $('stop'), status: $('status'),
-  transcript: $('transcript'), preview: $('preview'),
+  start: $('start'), share: $('share'), stop: $('stop'),
+  pill: $('pill'), pillText: $('pill-text'),
+  steps: [$('step-1'), $('step-2'), $('step-3')],
+  alert: $('alert'), alertTitle: $('alert-title'), alertHint: $('alert-hint'), alertClose: $('alert-close'),
+  transcript: $('transcript'), empty: $('empty'),
+  preview: $('preview'), previewEmpty: $('preview-empty'),
+  micLevel: $('mic-level'), speaking: $('speaking'),
   latLast: $('lat-last'), latP50: $('lat-p50'), latOk: $('lat-ok'),
   elapsed: $('elapsed'), reconnects: $('reconnects'), frames: $('frames'),
 };
@@ -13,9 +19,46 @@ const ui = {
 const sessionId = crypto.randomUUID().slice(0, 8);
 let live, micCtx, micStream, playCtx, playNode, sampler, startedAt, clock;
 let modelPlaying = false;
+let connected = false;
 const latency = new LatencyTracker();
 
-function setStatus(text) { ui.status.textContent = text; }
+// ---- 화면 상태 표시 ----
+
+const PILL = {
+  idle: '대기 중',
+  connecting: '연결하는 중…',
+  listening: '듣고 있어요',
+  speaking: 'AI가 말하는 중',
+  reconnecting: '다시 연결하는 중…',
+  error: '문제가 생겼어요',
+  ended: '수업이 끝났어요',
+};
+function setState(state) {
+  ui.pill.dataset.state = state;
+  ui.pillText.textContent = PILL[state];
+}
+
+// step: 지금 해야 할 단계 번호(1~3). 4면 모두 완료.
+function setStep(step) {
+  ui.steps.forEach((el, i) => {
+    el.classList.toggle('done', i + 1 < step);
+    el.classList.toggle('active', i + 1 === step);
+  });
+}
+
+function showError(err, context) {
+  const f = friendlyError(err, context);
+  ui.alertTitle.textContent = f.title;
+  ui.alertHint.textContent = f.hint;
+  ui.alert.hidden = false;
+}
+function hideError() { ui.alert.hidden = true; }
+
+function setSpeaking(on) {
+  modelPlaying = on;
+  ui.speaking.hidden = !on;
+  if (connected) setState(on ? 'speaking' : 'listening');
+}
 
 function metric(kind, value = null, detail = null) {
   fetch('/api/metrics', {
@@ -29,6 +72,7 @@ function metric(kind, value = null, detail = null) {
 // 같은 화자의 전사 조각은 한 말풍선에 이어 붙인다.
 let lastBubble = null;
 function addTranscript(who, text) {
+  ui.empty?.remove();
   if (lastBubble && lastBubble.dataset.who === who && who !== 'system') {
     lastBubble.textContent += text;
   } else {
@@ -40,6 +84,8 @@ function addTranscript(who, text) {
   }
   ui.transcript.scrollTop = ui.transcript.scrollHeight;
 }
+
+// ---- 연결과 오디오 ----
 
 async function fetchSession() {
   const res = await fetch('/api/session', { method: 'POST' });
@@ -53,7 +99,7 @@ async function setupAudio() {
   await playCtx.audioWorklet.addModule('audio-worklets.js');
   playNode = new AudioWorkletNode(playCtx, 'playback-processor');
   playNode.connect(playCtx.destination);
-  playNode.port.onmessage = (e) => { modelPlaying = e.data.type === 'playing'; };
+  playNode.port.onmessage = (e) => setSpeaking(e.data.type === 'playing');
 
   // 캡처: 브라우저 기본 샘플레이트로 받고 워클릿에서 16kHz로 줄인다.
   micStream = await navigator.mediaDevices.getUserMedia({
@@ -65,6 +111,7 @@ async function setupAudio() {
   const capture = new AudioWorkletNode(micCtx, 'capture-processor');
   capture.port.onmessage = (e) => {
     latency.onMic(e.data.rms, performance.now(), modelPlaying);
+    ui.micLevel.style.width = `${Math.min(100, Math.round(e.data.rms * 400))}%`;
     live?.sendAudio(e.data.pcm);
   };
   src.connect(capture);
@@ -91,13 +138,20 @@ function tickClock() {
 }
 
 async function start() {
+  hideError();
   ui.start.disabled = true;
-  setStatus('마이크와 연결을 준비하는 중…');
+  ui.start.textContent = '준비 중…';
+  setStep(2);
+  setState('connecting');
   try {
     await setupAudio();
     live = new LiveSession({ fetchSession });
     live.addEventListener('ready', () => {
-      setStatus('연결됨. 말을 걸어 보세요.');
+      connected = true;
+      hideError();
+      setState('listening');
+      setStep(3);
+      ui.start.textContent = '수업 중';
       ui.share.disabled = false;
       ui.stop.disabled = false;
     });
@@ -105,31 +159,42 @@ async function start() {
     live.addEventListener('interrupted', () => playNode.port.postMessage({ type: 'clear' }));
     live.addEventListener('transcript', (e) => addTranscript(e.detail.who, e.detail.text));
     live.addEventListener('reconnecting', (e) => {
+      connected = false;
+      setState('reconnecting');
       ui.reconnects.textContent = String(live.reconnects);
-      addTranscript('system', `재연결 중: ${e.detail}`);
+      addTranscript('system', '연결이 잠깐 끊겨서 다시 연결하고 있어요. 대화는 이어집니다.');
       metric('reconnect', null, e.detail);
     });
     live.addEventListener('error', (e) => {
-      addTranscript('system', e.detail);
+      showError(e.detail);
       metric('error', null, e.detail);
     });
-    live.addEventListener('closed', () => setStatus('연결이 끝났습니다.'));
+    live.addEventListener('closed', () => {
+      if (!live?.closedByUser) {
+        connected = false;
+        setState('error');
+        resetButtons();
+      }
+    });
     await live.connect();
     startedAt = Date.now();
     clock = setInterval(tickClock, 1000);
     metric('session_start');
   } catch (err) {
-    setStatus(`시작 실패: ${err.message}`);
-    ui.start.disabled = false;
+    showError(err);
+    setState('error');
     teardown();
+    resetButtons();
   }
 }
 
 async function shareScreen() {
+  hideError();
   try {
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 5 }, audio: false });
     ui.preview.srcObject = stream;
     ui.preview.classList.add('on');
+    ui.previewEmpty.hidden = true;
     ui.preview.play();
     sampler = new ScreenSampler({
       onFrame: (b64, info) => {
@@ -138,22 +203,27 @@ async function shareScreen() {
     });
     await sampler.start(stream);
     stream.getVideoTracks()[0].addEventListener('ended', stopShare);
+    setStep(4);
     ui.share.textContent = '공유 중지';
     ui.share.onclick = stopShare;
   } catch (err) {
-    addTranscript('system', `화면 공유 실패: ${err.message}`);
+    showError(err, 'screen');
   }
 }
 
 function stopShare() {
   sampler?.stop();
+  ui.preview.srcObject?.getTracks().forEach((t) => t.stop());
   ui.preview.classList.remove('on');
   ui.preview.srcObject = null;
+  ui.previewEmpty.hidden = false;
+  if (connected) setStep(3);
   ui.share.textContent = '화면 공유';
   ui.share.onclick = shareScreen;
 }
 
 function teardown() {
+  connected = false;
   live?.close();
   stopShare();
   sampler = null;
@@ -161,18 +231,29 @@ function teardown() {
   micCtx?.close();
   playCtx?.close();
   clearInterval(clock);
+  ui.micLevel.style.width = '0';
+  ui.speaking.hidden = true;
+  modelPlaying = false;
+}
+
+function resetButtons() {
+  ui.stop.disabled = true;
+  ui.share.disabled = true;
+  ui.start.disabled = false;
+  ui.start.textContent = '다시 시작';
+  setStep(2);
 }
 
 function stop() {
   if (startedAt) metric('session_end', Math.round((Date.now() - startedAt) / 1000));
   teardown();
-  ui.stop.disabled = true;
-  ui.share.disabled = true;
-  ui.start.disabled = false;
-  setStatus('수업을 끝냈습니다.');
+  resetButtons();
+  setState('ended');
+  addTranscript('system', '수업을 끝냈어요. 수고했어요!');
   startedAt = null;
 }
 
 ui.start.onclick = start;
 ui.share.onclick = shareScreen;
 ui.stop.onclick = stop;
+ui.alertClose.onclick = hideError;

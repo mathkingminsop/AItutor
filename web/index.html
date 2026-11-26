@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI 수학 과외 (1단계 시제품)</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>AI 수학 과외</h1>
+      <span class="badge">1단계 시제품</span>
+    </header>
+
+    <main>
+      <section class="controls">
+        <button id="start" class="primary">수업 시작</button>
+        <button id="share" disabled>화면 공유</button>
+        <button id="stop" disabled>수업 끝내기</button>
+        <p id="status" role="status">헤드폰을 끼고 "수업 시작"을 눌러 주세요.</p>
+      </section>
+
+      <section class="panels">
+        <div class="panel">
+          <h2>대화</h2>
+          <ol id="transcript" aria-live="polite"></ol>
+        </div>
+        <div class="panel">
+          <h2>측정 (1단계 관문)</h2>
+          <dl class="stats">
+            <dt>응답 지연 (최근)</dt><dd id="lat-last">-</dd>
+            <dt>응답 지연 (중앙값)</dt><dd id="lat-p50">-</dd>
+            <dt>1초 이내 비율</dt><dd id="lat-ok">-</dd>
+            <dt>수업 시간</dt><dd id="elapsed">-</dd>
+            <dt>재연결</dt><dd id="reconnects">0</dd>
+            <dt>보낸 화면 / 생략</dt><dd id="frames">0 / 0</dd>
+          </dl>
+          <video id="preview" muted playsinline></video>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
